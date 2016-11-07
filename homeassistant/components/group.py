@@ -27,6 +27,7 @@ DOMAIN = 'group'
 
 ENTITY_ID_FORMAT = DOMAIN + '.{}'
 
+CONF_MASTERSWITCH = 'masterswitch'
 CONF_ENTITIES = 'entities'
 CONF_VIEW = 'view'
 
@@ -61,6 +62,7 @@ CONFIG_SCHEMA = vol.Schema({
         CONF_VIEW: cv.boolean,
         CONF_NAME: cv.string,
         CONF_ICON: cv.icon,
+        CONF_MASTERSWITCH: cv.boolean,
     }, cv.match_all))
 }, extra=vol.ALLOW_EXTRA)
 
@@ -206,11 +208,13 @@ def _async_process_config(hass, config, component):
         entity_ids = conf.get(CONF_ENTITIES) or []
         icon = conf.get(CONF_ICON)
         view = conf.get(CONF_VIEW)
+        master_switch = conf.get(CONF_MASTERSWITCH, True)
 
         # Don't create tasks and await them all. The order is important as
         # groups get a number based on creation order.
         group = yield from Group.async_create_group(
-            hass, name, entity_ids, icon=icon, view=view, object_id=object_id)
+            hass, name, entity_ids, icon=icon, view=view, object_id=object_id,
+            master_switch=master_switch)
         groups.append(group)
 
     if groups:
@@ -221,7 +225,7 @@ class Group(Entity):
     """Track a group of entity ids."""
 
     def __init__(self, hass, name, order=None, user_defined=True, icon=None,
-                 view=False):
+                 view=False, master_switch=True):
         """Initialize a group.
 
         This Object has factory function for creation.
@@ -233,6 +237,7 @@ class Group(Entity):
         self._order = order
         self._icon = icon
         self._view = view
+        self._master_switch = master_switch
         self.tracking = []
         self.group_on = None
         self.group_off = None
@@ -242,17 +247,19 @@ class Group(Entity):
 
     @staticmethod
     def create_group(hass, name, entity_ids=None, user_defined=True,
-                     icon=None, view=False, object_id=None):
+                     icon=None, view=False, object_id=None,
+                     master_switch=True):
         """Initialize a group."""
         return run_coroutine_threadsafe(
             Group.async_create_group(hass, name, entity_ids, user_defined,
-                                     icon, view, object_id),
+                                     icon, view, object_id, master_switch),
             hass.loop).result()
 
     @staticmethod
     @asyncio.coroutine
     def async_create_group(hass, name, entity_ids=None, user_defined=True,
-                           icon=None, view=False, object_id=None):
+                           icon=None, view=False, object_id=None,
+                           master_switch=True):
         """Initialize a group.
 
         This method must be run in the event loop.
@@ -260,7 +267,8 @@ class Group(Entity):
         group = Group(
             hass, name,
             order=len(hass.states.async_entity_ids(DOMAIN)),
-            user_defined=user_defined, icon=icon, view=view)
+            user_defined=user_defined, icon=icon, view=view,
+            master_switch=master_switch)
 
         group.entity_id = async_generate_entity_id(
             ENTITY_ID_FORMAT, object_id or name, hass=hass)
@@ -374,7 +382,10 @@ class Group(Entity):
     def async_update(self):
         """Query all members and determine current group state."""
         self._state = STATE_UNKNOWN
-        self._async_update_group_state()
+
+        # Check if we need to add a group switch
+        if self._master_switch:
+            self._async_update_group_state()
 
     @asyncio.coroutine
     def async_remove(self):
@@ -424,6 +435,10 @@ class Group(Entity):
         gr_state = self._state
         gr_on = self.group_on
         gr_off = self.group_off
+
+        # If master_switch is disabled do not change the group state
+        if not self._master_switch:
+            return
 
         # We have not determined type of group yet
         if gr_on is None:
