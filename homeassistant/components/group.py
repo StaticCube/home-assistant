@@ -14,7 +14,7 @@ from homeassistant import config as conf_util, core as ha
 from homeassistant.const import (
     ATTR_ENTITY_ID, CONF_ICON, CONF_NAME, STATE_CLOSED, STATE_HOME,
     STATE_NOT_HOME, STATE_OFF, STATE_ON, STATE_OPEN, STATE_LOCKED,
-    STATE_UNLOCKED, STATE_UNKNOWN, ATTR_ASSUMED_STATE)
+    STATE_UNLOCKED, STATE_UNKNOWN, STATE_UNAVAILABLE, ATTR_ASSUMED_STATE)
 from homeassistant.core import callback
 from homeassistant.helpers.entity import Entity, async_generate_entity_id
 from homeassistant.helpers.entity_component import EntityComponent
@@ -386,6 +386,8 @@ class Group(Entity):
         # Check if we need to add a group switch
         if self._iscontrollable:
             self._async_update_group_state()
+        else:
+            self._state = STATE_UNAVAILABLE;
 
     @asyncio.coroutine
     def async_remove(self):
@@ -438,6 +440,7 @@ class Group(Entity):
 
         # If iscontrollable is disabled do not change the group state
         if not self._iscontrollable:
+            self._state = STATE_UNAVAILABLE
             return
 
         # We have not determined type of group yet
